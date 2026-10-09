@@ -15,7 +15,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
 const matrix = parseMatrix(readFileSync(resolve(root, 'docs/compatibility-matrix.md'), 'utf8'))
 
-const VERIFIED = ['0.1.7-alpha.1', '0.1.7-alpha.2', '0.1.7-rc.1', '0.1.7-rc.2']
+const VERIFIED = ['0.1.7-alpha.1', '0.1.7-alpha.2', '0.1.7-rc.1', '0.1.7-rc.2', '0.2.0-rc.2']
 
 test('host compat: the shipped manifest and matrix verify cleanly', () => {
   assert.notEqual(matrix, null, 'docs/compatibility-matrix.md must carry a dsh-host-matrix block')

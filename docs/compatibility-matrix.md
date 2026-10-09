@@ -77,6 +77,7 @@ Machine-readable block (the source of truth for `scripts/verify-host-compat.mjs`
     { "version": "0.1.7-alpha.2", "status": "verified", "tag": "dsh-v0.1.7-alpha.2" },
     { "version": "0.1.7-rc.1", "status": "verified", "tag": "dsh-v0.1.7-rc.1" },
     { "version": "0.1.7-rc.2", "status": "verified", "tag": "dsh-v0.1.7-rc.2" },
+    { "version": "0.2.0-rc.2", "status": "verified", "tag": null },
     { "version": "0.1.0-rc.6", "status": "unverified", "tag": null }
   ]
 }
