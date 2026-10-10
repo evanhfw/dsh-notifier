@@ -169,3 +169,35 @@ test('v0.6.1 inbound ${ENV:NAME} 密钥引用与 channels 对齐：在则替换�
     delete process.env.DSH_TEST_INBOUND_TG
   }
 })
+
+// v0.13.2 反代接入：admin.allowedHosts / allowedOrigins / publicUrl 归一化。
+// 这些值此前在 admin/server.mjs 已有支持（S-06），但从未从 config 接线——
+// 本组锁定接线后的归一化语义：大小写归一、去重、逗号串与数组同义、publicUrl fail-closed。
+test('admin 反代配置：默认全空（存量行为零变化）', () => {
+  const admin = resolveConfig({}).admin
+  assert.deepEqual(admin.allowedHosts, [])
+  assert.deepEqual(admin.allowedOrigins, [])
+  assert.equal(admin.publicUrl, '')
+})
+
+test('admin.allowedHosts：逗号串与数组同义，小写归一，去空去重', () => {
+  const fromString = resolveConfig({ admin: { allowedHosts: 'Notifier.EHW.my.id, dsh.ehw.my.id' } }).admin
+  assert.deepEqual(fromString.allowedHosts, ['notifier.ehw.my.id', 'dsh.ehw.my.id'])
+  const fromArray = resolveConfig({ admin: { allowedHosts: ['A.example.com', 'a.example.com', '', '  ', 'B.example.com'] } }).admin
+  assert.deepEqual(fromArray.allowedHosts, ['a.example.com', 'b.example.com'], '大小写归一后去重（先去重会留下同名重复项）')
+})
+
+test('admin.allowedOrigins：保持原样（scheme 大小写有意义，不做小写归一）', () => {
+  const admin = resolveConfig({ admin: { allowedOrigins: ['https://admin.example.com', ' https://admin.example.com '] } }).admin
+  assert.deepEqual(admin.allowedOrigins, ['https://admin.example.com'], '首尾空白裁掉后同值去重')
+})
+
+test('admin.publicUrl：仅接受可解析的 http(s)，去尾斜杠；畸形值 fail-closed 回落空串', () => {
+  const ok = { admin: { publicUrl: 'https://notifier.ehw.my.id/' } }
+  assert.equal(resolveConfig(ok).admin.publicUrl, 'https://notifier.ehw.my.id', '去尾斜杠')
+  const withPath = { admin: { publicUrl: 'https://x.example.com/notifier/' } }
+  assert.equal(resolveConfig(withPath).admin.publicUrl, 'https://x.example.com/notifier', '保留子路径（反代可挂子路径）')
+  for (const bad of ['javascript:alert(1)', 'not a url', 'ftp://x.example.com', '', '   ']) {
+    assert.equal(resolveConfig({ admin: { publicUrl: bad } }).admin.publicUrl, '', `畸形值回落空串: ${JSON.stringify(bad)}`)
+  }
+})

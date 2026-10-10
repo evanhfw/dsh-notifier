@@ -109,6 +109,7 @@ export function createControlSurfaceService({
   storageStatus,
   launchTickets,
   adminLocation,
+  adminPublicUrl,
 } = {}) {
   const revisionView = () => {
     const current = revision.current()
@@ -241,11 +242,17 @@ export function createControlSurfaceService({
 
       if (method === 'standalone.createLaunch') {
         const location = typeof adminLocation === 'function' ? adminLocation() : null
+        // 反代优先：publicUrl 是浏览器侧真正可达的基址；未配置才回落回环（存量行为）。
+        // 反代路径下 adminLocation 仍必须就绪——否则说明管理台未启动，链接必然打不开。
+        const publicUrl = typeof adminPublicUrl === 'function' ? String(adminPublicUrl() ?? '').trim() : ''
         if (!location?.port) return ok({ available: false, reason: 'disabled' })
+        const base = publicUrl !== ''
+          ? publicUrl.replace(/\/+$/, '')
+          : `http://${location.address || '127.0.0.1'}:${location.port}`
         const minted = launchTickets.mint()
         return ok({
           available: true,
-          url: `http://${location.address || '127.0.0.1'}:${location.port}/#ticket=${encodeURIComponent(minted.ticket)}`,
+          url: `${base}/#ticket=${encodeURIComponent(minted.ticket)}`,
         })
       }
 

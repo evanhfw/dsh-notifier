@@ -11,6 +11,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { request as httpRequest } from 'node:http'
 import { createAdminServer } from '../src/admin/server.mjs'
+import { resolveConfig } from '../src/config.mjs'
 
 /** 最小 api 桩：overview 可用即可（本套件只关心闸与状态码，不测 api 语义）。 */
 function makeApi() {
@@ -143,4 +144,32 @@ test('S-06 闸对 UI 页与 API 同效（GET / 也过闸）；被拒请求不泄
     const ghost = await call(rig, '/api/ghost-route', { origin: 'https://evil.example.com' })
     assert.equal(ghost.status, 403, '403 优先于 404：不泄露路由存在性')
   })
+})
+
+// v0.13.2 反代接入端到端：config.admin.allowedHosts/allowedOrigins 经接线后必须真的放行反代域名。
+// 锁定的是一条接线缝——server.mjs 早有这两个参数（S-06），但 config→index 从未传递，
+// 于是反代部署必然 403（本机实测 Host: notifier.ehw.my.id → 403）。
+// 断言用 resolveConfig 的真实输出喂给 server，覆盖「配置写法 → 放行结论」整条链。
+test('v0.13.2 反代接线：config.admin 归一化后的 Host/Origin 真的放行反代域名', async () => {
+  const resolved = resolveConfig({
+    admin: {
+      allowedHosts: 'Notifier.EHW.my.id, dsh.ehw.my.id', // 大小写混写 + 逗号串
+      allowedOrigins: ['https://notifier.ehw.my.id'],
+    },
+  })
+  await withServer(
+    { allowedHosts: resolved.admin.allowedHosts, allowedOrigins: resolved.admin.allowedOrigins },
+    async (rig) => {
+      const proxied = await rawCall(rig, '/api/overview', { host: 'notifier.ehw.my.id', origin: 'https://notifier.ehw.my.id' })
+      assert.equal(proxied.status, 200, '登记的反代 Host/Origin 放行（大小写不敏感）')
+      const upper = await rawCall(rig, '/api/overview', { host: 'NOTIFIER.EHW.MY.ID', origin: 'https://notifier.ehw.my.id' })
+      assert.equal(upper.status, 200, 'Host 头大小写不敏感（HTTP 语义）')
+      const evilOrigin = await rawCall(rig, '/api/overview', { host: 'notifier.ehw.my.id', origin: 'https://evil.example.com' })
+      assert.equal(evilOrigin.status, 403, '未登记 Origin 仍拒（放行不是通配）')
+      const evilHost = await rawCall(rig, '/api/overview', { host: 'evil.example.com', origin: 'https://notifier.ehw.my.id' })
+      assert.equal(evilHost.status, 403, '未登记 Host 仍拒')
+      const loopback = await rawCall(rig, '/api/overview', { host: `127.0.0.1:${rig.port}` })
+      assert.equal(loopback.status, 200, '回环放行不受影响（存量行为）')
+    },
+  )
 })

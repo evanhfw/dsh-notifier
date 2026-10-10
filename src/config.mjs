@@ -386,10 +386,43 @@ export function resolveConfig(config = {}) {
   const adminPort = typeof rawAdmin.port === 'number' && Number.isFinite(rawAdmin.port)
     ? Math.min(65535, Math.max(1, Math.trunc(rawAdmin.port)))
     : 8104
+  // 反代接入（S-06 已支持 allowedHosts/allowedOrigins，此前从未从 config 接线）：
+  //  - allowedHosts/allowedOrigins：额外放行的 Host 头 / Origin，逗号分隔或数组，去空去重小写归一。
+  //    仅放行显式列出的值，绝不用通配；绑定地址仍是 127.0.0.1 红线不变。
+  //  - publicUrl：浏览器侧可达的基址（如 https://notifier.example.com），用于生成
+  //    「高级管理台」启动链接。留空则沿用回环 http://127.0.0.1:<port>（存量行为）。
+  //    非 http(s) 或无法解析一律回落空串（fail-closed，绝不把畸形值拼进链接）。
+  // normalize 先于去重：Host 大小写不敏感（'A.example.com' 与 'a.example.com' 必须合成一条，
+  // 否则白名单里出现同名重复项，语义歧义）。
+  const idList = (value, normalize = (item) => item) => {
+    const raw = Array.isArray(value) ? value : (typeof value === 'string' ? value.split(',') : [])
+    const out = []
+    const seen = new Set()
+    for (const item of raw) {
+      const id = normalize(String(item ?? '').trim())
+      if (id === '' || seen.has(id)) continue
+      seen.add(id)
+      out.push(id)
+    }
+    return out
+  }
+  const rawPublicUrl = typeof rawAdmin.publicUrl === 'string' ? rawAdmin.publicUrl.trim() : ''
+  let adminPublicUrl = ''
+  if (rawPublicUrl !== '') {
+    try {
+      const parsed = new URL(rawPublicUrl)
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        adminPublicUrl = parsed.origin + parsed.pathname.replace(/\/+$/, '')
+      }
+    } catch { adminPublicUrl = '' }
+  }
   const admin = {
     enabled: rawAdmin.enabled === true,
     port: adminPort,
     token: typeof rawAdmin.token === 'string' && rawAdmin.token.trim() !== '' ? rawAdmin.token : '',
+    allowedHosts: idList(rawAdmin.allowedHosts, (value) => value.toLowerCase()),
+    allowedOrigins: idList(rawAdmin.allowedOrigins),
+    publicUrl: adminPublicUrl,
   }
 
   // 公共面（v0.6，设计稿 §2）：其他插件经 ctx.notifier 服务注入推送 + 订阅 sent 事件。

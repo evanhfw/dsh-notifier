@@ -836,6 +836,8 @@ export function apply(ctx, config = {}) {
     },
     launchTickets,
     adminLocation: () => adminListenInfo,
+    // 反代场景：浏览器可达基址（config.admin.publicUrl）。留空则启动链接回落回环地址。
+    adminPublicUrl: () => resolved.admin.publicUrl,
   })
   // v0.12：Native 通道挂在宿主 HTTP server 上（`/dsh-notifier` prefix 路由），与宿主 connection
   // 插件挂 `/api` 同款，故注册方必须能同时访问 connection（准入）与 webServer（挂路由）。
@@ -943,6 +945,9 @@ export function apply(ctx, config = {}) {
         verifySession: (token) => adminSessions.verify(token),
         host: '127.0.0.1', // 红线：永不绑公网（§0.5-6，config.mjs 已写死不可配）
         port: resolved.admin.port,
+        // 反代接入：仅放行 config 显式列出的 Host/Origin（S-06 第二道防线不变；绑定地址仍只回环）
+        allowedHosts: resolved.admin.allowedHosts,
+        allowedOrigins: resolved.admin.allowedOrigins,
         ui: createAdminUiHtml(resolved.lang),
         events: eventHub, // v0.4.0 通知事件流（GET /api/events，SSE）
         logger,

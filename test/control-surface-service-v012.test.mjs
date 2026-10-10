@@ -222,3 +222,37 @@ test('R3：storage 损坏（corrupt）时 surface.home 报 attention 且明确 s
   assert.match(home.value.summary.detail.zh, /损坏/, '必须明确说明 storage degraded，而不是伪装正常')
   assert.equal(home.value.storage.corrupt, true)
 })
+
+// v0.13.2 反代接入：standalone.createLaunch 的基址解析。
+// 反代部署下回环地址对远端浏览器无意义（指向用户自己的机器），故 publicUrl 优先；
+// 未配置时保持存量回环行为。管理台未就绪（adminLocation 空）一律 disabled，绝不产出死链。
+test('standalone.createLaunch：publicUrl 优先，未配置回落回环，管理台未就绪一律 disabled', async () => {
+  const build = (adminPublicUrl, adminLocation = () => ({ port: 8104, address: '127.0.0.1' })) => createControlSurfaceService({
+    revision: createSurfaceRevision(),
+    channels: { list: () => [] },
+    tasks: { list: () => [] },
+    questions: { list: () => [] },
+    activity: createSurfaceActivity(),
+    health: createSurfaceHealth(),
+    storageStatus: {},
+    launchTickets: { mint: () => ({ ticket: 'TK' }) },
+    adminLocation,
+    ...(adminPublicUrl === undefined ? {} : { adminPublicUrl }),
+  })
+
+  const proxied = await build(() => 'https://notifier.ehw.my.id').call('standalone.createLaunch')
+  assert.equal(proxied.value.url, 'https://notifier.ehw.my.id/#ticket=TK', '反代基址优先')
+
+  const subpath = await build(() => 'https://x.example.com/notifier').call('standalone.createLaunch')
+  assert.equal(subpath.value.url, 'https://x.example.com/notifier/#ticket=TK', '支持反代子路径')
+
+  const legacy = await build(() => '').call('standalone.createLaunch')
+  assert.equal(legacy.value.url, 'http://127.0.0.1:8104/#ticket=TK', '空 publicUrl → 存量回环行为')
+
+  const absent = await build(undefined).call('standalone.createLaunch')
+  assert.equal(absent.value.url, 'http://127.0.0.1:8104/#ticket=TK', '未注入 accessor → 存量行为')
+
+  const disabled = await build(() => 'https://notifier.ehw.my.id', () => null).call('standalone.createLaunch')
+  assert.equal(disabled.value.available, false, '管理台未就绪 → disabled（绝不产出打不开的链接）')
+  assert.equal(disabled.value.reason, 'disabled')
+})

@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### 反代接入：admin.allowedHosts / allowedOrigins / publicUrl 接线
+
+**问题**：`admin/server.mjs` 自 S-06 起就接受 `allowedHosts`/`allowedOrigins`，但**从未从 config 接线**——`index.mjs` 与 `config.mjs` 里没有任何地方传递它们。于是任何反向代理部署必然被请求闸拒绝（本机实测：`Host: notifier.ehw.my.id` → `403 {"error":"请求被拒绝：Origin/Host 校验未通过"}`）。同时「高级管理台」启动链接把基址硬编码为回环（`http://127.0.0.1:<port>`），在远端浏览器上指向用户自己的机器，从别的机器点击必然打不开。
+
+**修复**：
+- `admin.allowedHosts` / `admin.allowedOrigins`：显式列出的 Host 头 / Origin 才放行（逗号串与数组同义，去空去重，Host 小写归一——先归一再去重，避免 `A.example.com` 与 `a.example.com` 同时存活）。**不使用通配**：未登记的值一律继续 403。
+- `admin.publicUrl`：浏览器侧可达基址，用于生成启动链接。仅接受可解析的 `http(s)` URL（其余 fail-closed 回落空串），去尾斜杠、保留子路径以支持子路径反代。留空时保持存量回环行为。
+- 绑定地址仍是 `127.0.0.1` 红线，**未改动**。反代可达性由用户自己的代理层提供；本次只让显式登记的 Host/Origin 能通过第二道防线（Bearer token 仍是主要鉴权）。
+
+**安全理由**：这台管理台持有全部渠道凭证的写权限。放行面必须是显式枚举而非通配，畸形 `publicUrl` 不得进入链接，管理台未就绪时启动链接继续返回 `disabled` 而不产出死链。
+
+### 验证边界
+
+- `npm test`：**2017 tests，2017 pass，0 fail，0 skip**（v0.13.1 基线 2011 + 本次 6 个聚焦用例）。
+- `npm run verify:release`、`node scripts/verify-host-compat.mjs`、`node scripts/gen-channel-matrix.mjs --check`、`node --check src/index.mjs` 全部通过。
+- 反代链路的真实 HTTPS/证书/代理头行为未在本机以真实域名端到端验证（仅以伪造 Host/Origin 头的原生 HTTP 请求验证闸语义），登记于 [`docs/memory/risks.md`](docs/memory/risks.md)。
+
 ## [0.13.1] - 2026-09-26（v0.13 follow-up release）
 
 本次补丁发行收口 v0.13 后续验证与公开交付边界：管理台补齐中英文资源表与安全内联序列化，公开投递能力改为证据边界表述，npm 白名单覆盖 README 文档/图片并加入包内容回归；高风险专项复核同步完成。
