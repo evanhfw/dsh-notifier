@@ -23,3 +23,12 @@
   - **Dead-link risk**: `adminPublicUrl` is consulted only after the `adminLocation?.port` readiness check, so a stopped admin server still returns `disabled`.
   - **Back-compat**: default (no config) behaviour is unchanged — empty lists and the loopback launch URL — asserted in both config and service tests.
 - Handoff: Config-level reverse-proxy support landed on `codex/admin-remote-access`. The admin server still binds `127.0.0.1` only; reachability comes from the operator's proxy. End-to-end verification through a real HTTPS proxy (TLS termination, `X-Forwarded-*`, Cloudflare issuance) was **not** performed on this machine and is recorded in `docs/memory/risks.md`. Next step is the operator-side Caddy block plus the profile config, which are environment changes outside this repo. Commit id recorded on the branch tip.
+
+## Operator-side rollout (outside this repo)
+
+- `~/docker/reverse-proxy/Caddyfile`: added a `notifier.ehw.my.id` block with a `tls { dns cloudflare ... }` directive (DNS-01 — HTTP-01 cannot work because the name resolves to a Tailscale address) and a `@tailscale remote_ip 100.64.0.0/10` matcher, with `respond 403` as the fallthrough.
+- First attempt omitted the `tls` block; Caddy fell back to HTTP-01 and failed with `no valid A records found`. Caught in the container log and fixed before declaring success.
+- Profile `cordis.patch.yml`: `admin.allowedHosts: [notifier.ehw.my.id]`, `admin.allowedOrigins: [https://notifier.ehw.my.id]`, `admin.publicUrl: https://notifier.ehw.my.id`.
+- Caddy runs with `admin off`, so `caddy reload` is impossible; the change required `docker restart reverse-proxy` (brief drop for all proxied services).
+- Verified: proxied console `200` with the English UI; `Host: notifier.ehw.my.id` direct `200`; `evil.example.com` / `dsh.ehw.my.id` / unlisted Origin all `403`; `127.0.0.1:8104` still `200`; non-Tailscale source (`127.0.0.1`) gets Caddy `403` with an empty body while a Tailscale source gets `200` — both defence layers independently confirmed.
+- Remaining risk: the proxied console shares the same Bearer token model; anyone inside the tailnet can reach the unlock gate, so a leaked admin token remains the sole barrier to full credential write access.
