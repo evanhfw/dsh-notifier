@@ -32,3 +32,14 @@
 - Caddy runs with `admin off`, so `caddy reload` is impossible; the change required `docker restart reverse-proxy` (brief drop for all proxied services).
 - Verified: proxied console `200` with the English UI; `Host: notifier.ehw.my.id` direct `200`; `evil.example.com` / `dsh.ehw.my.id` / unlisted Origin all `403`; `127.0.0.1:8104` still `200`; non-Tailscale source (`127.0.0.1`) gets Caddy `403` with an empty body while a Tailscale source gets `200` — both defence layers independently confirmed.
 - Remaining risk: the proxied console shares the same Bearer token model; anyone inside the tailnet can reach the unlock gate, so a leaked admin token remains the sole barrier to full credential write access.
+
+### Correction: dsh runs under system scope, not user scope
+
+Earlier in this session the reload/restart procedure was written against the **user** scope (`systemctl --user`, `~/.config/systemd/user/dsh.service`, `dbus-send --session` to `/run/user/1000/bus`). That scope no longer exists: `~/.config/systemd/user/dsh.service` is gone, the user-scope unit is unloaded (`NoSuchUnit`), and the live service is a **system** unit.
+
+- Live unit: `/etc/systemd/system/dsh.service` (`User=evan`, `WantedBy=multi-user.target`), `MainPID=1305664`, started `16:23:36`.
+- Consequence: user-scope `journalctl --user -u dsh.service` is a stale leftover and stops at the 16:23 handover. It is **not** the health signal for the running host, and reading it after the handover gives a misleading "stopped with no start" picture.
+- Correct health checks: `systemctl is-active dsh.service` / `systemctl show dsh.service -p MainPID -p ActiveState`, and `journalctl -u dsh.service` (no `--user`).
+- Correct restart: `sudo systemctl restart dsh.service`. The sandbox sets the no-new-privileges flag, so `sudo` cannot escalate from an agent shell — a restart must be run by the operator, or requested explicitly.
+- `CanStop=yes` is reported for the invoking user, but escalation is still required in practice; do not assume an agent-side restart works just because `systemctl show` says so.
+- Re-verified after the handover: plugin still resolves to the repo path, tip `fa6af24`; proxied console `200` with the English UI; unlisted Host `403`; non-Tailscale source `403`; **0** Telegram polling failures since the 16:23:36 start (the earlier 15:1x `fetch failed` burst belongs to the pre-handover user-scope run, not the current process).
